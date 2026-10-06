@@ -5,6 +5,27 @@ format: html
 editor: visual
 ---
 
+```{r, include=FALSE}
+# Clear active workspace memory at the start of interactive runs
+rm(list = ls())
+
+# Ensure renv loads from the project directory
+if (requireNamespace("renv", quietly = TRUE)) {
+  # Points to the main project folder containing .Rprofile / renv.lock
+  renv::load(project = "..")
+}
+
+# Set global code chunk options for Quarto / R Markdown rendering
+knitr::opts_chunk$set(
+  echo = TRUE,          # Show code chunks in final report
+  warning = FALSE,      # Hide package execution warnings
+  message = FALSE,      # Hide library load startup messages
+  fig.width = 8,        # Standardize figure width
+  fig.height = 5,       # Standardize figure height
+  fig.align = "center"  # Center plot outputs
+)
+```
+
 ## Data Load-In (Nick)
 
 ```{r}

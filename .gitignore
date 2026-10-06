@@ -6,11 +6,20 @@ npp_coffee_project_nb_files/
 npp_coffee_project_nb.html
 *.html
 *_cache/
+*_files/
 
-# R history and environment files
+# R history and environment files (root and subfolders)
 .Rhistory
 .RData
 .Ruserdata
+**/.Rhistory
+**/.RData
+**/.Ruserdata
+
+# renv package manager
+renv/library/
+renv/python/
+renv/staging/
 
 # Raw CSV datasets
 coffee_ratings.csv
