@@ -1,0 +1,44 @@
+---
+title: "Math 180 Team 5 NPP Coffee Project"
+authors: "Nick Shpaner, Prerana Somarapu, Philip Valdehuesa"
+format: html
+editor: visual
+---
+
+## Data Load-In (Nick)
+
+```{r}
+library(readr)
+coffee_ratings <- read_csv("../data_info/coffee_ratings.csv")
+head(coffee_ratings)
+```
+
+```{r}
+str(coffee_ratings)
+```
+
+## Data Introduction and Exploration (Nick)
+
+```{r}
+summary(coffee_ratings$total_cup_points)
+```
+
+```{r}
+# Histogram of Total Cup Points
+hist(
+  coffee_ratings$total_cup_points,
+  col = "lightgray",
+  main = "Histogram of Total Cup Points",
+  xlab = "Total Cup Points"
+)
+```
+
+```{r}
+# Distribution of bean species
+table(coffee_ratings$species)
+```
+
+```{r}
+# Distribution of processing method
+table(coffee_ratings$processing_method)
+```
