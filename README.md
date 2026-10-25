@@ -52,6 +52,21 @@ where X\_controls include species, moisture, category\_one\_defects, category\_t
 
 We selected the Coffee Quality Institute (CQI) Specialty Coffee Dataset, originally aggregated and made public through the CQI database in 2018, and compiled by James LeDoux in 2020. The dataset was later refined and curated for academic use via the R TidyTuesday open-data initiative.
 
+\# Potential Obstacles
+
+Throughout our project we have encountered potential obstacles we could face in our project and these are some of the ways we can help solve them:
+
+1. Small & Unbalanced Groups
+For many types of coffee (especially Robusta (23 lots) & pulped natural/honey (10 lots)) and countries we noticed that there are far too few observation from them to make any proper conclusions. For our solution we decided to group any countries under 20 lots into "Other" as well as limiting conclusions when comparing them to other well observed countries.
+
+2. Unreliable/Missing Self-Reported Data
+Data (altitude, moisture, and processing) are reported by farms and have not been verified or tested for accuracy. This might lead to the risk in adding unnecessary noise to the data plots as they contain clear errors and other missed data from other countries. To combat this, we plan on excluding any potential outliers in our data and placing them in the unknown category as well as running a robustness check to show conclusions that don't change under stricter cleaning. 
+
+3. Weak predictive signal
+Our early results suggest that non-sensory features only small share of score (R^2 of 0.15 - 0.25), well below the RMSE <= 1.25 and R^2 >= 0.45 targets. To help improve our model, we can compare it on a naive baseline (predicting the mean) with a much more flexible model to determine what we can and can't tell with taste.
+
+\# AI Usage
+While we have used AI to help debug our model code & clarify any concepts associated with our project; we made sure that all interpretations and analysis made towards our data are our own work with no AI assistance whatsoever. For instance, when coming up with ways to help make our model much more flexible and reduce unwanted error; we use AI to give suggestions on what type of models to use for our projects as well as listing the cost and pros. However, when it comes time to being able to understand our own data, we make sure that all explanations made in regards to our dataset is all our owns to write.
 
 \## References
 
