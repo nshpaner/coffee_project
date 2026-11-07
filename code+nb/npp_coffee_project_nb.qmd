@@ -5,17 +5,22 @@ format: html
 editor: visual
 ---
 
+## Setup Renv and Install Dependencies
+
 ```{r, include=FALSE}
 # Clear active workspace memory at the start of interactive runs
 rm(list = ls())
 
-# Ensure renv loads from the project directory
-if (requireNamespace("renv", quietly = TRUE)) {
-  # Points to the main project folder containing .Rprofile / renv.lock
-  renv::load(project = "..")
+# Ensure 'here' is available and loaded for bulletproof relative pathing
+if (!requireNamespace("here", quietly = TRUE)) {
+  install.packages("here", repos = "https://cloud.r-project.org")
 }
+library(here)
 
-# Set global code chunk options for Quarto / R Markdown rendering
+# Force knitr to run all notebook chunks from the project root directory
+knitr::opts_knit$set(root.dir = here())
+
+# Set global Quarto / R Markdown chunk options
 knitr::opts_chunk$set(
   echo = TRUE,          # Show code chunks in final report
   warning = FALSE,      # Hide package execution warnings
@@ -24,42 +29,19 @@ knitr::opts_chunk$set(
   fig.height = 5,       # Standardize figure height
   fig.align = "center"  # Center plot outputs
 )
+
+# Install and load all required project dependencies natively
+source(here("code+nb/install_deps.R"))
 ```
 
-## Data Load-In (Nick)
+## Prediction Modeling
 
 ```{r}
-library(readr)
-coffee_ratings <- read_csv("../data_info/coffee_ratings.csv")
-head(coffee_ratings)
+source("pred_model.R")
 ```
 
-```{r}
-str(coffee_ratings)
-```
-
-## Data Introduction and Exploration (Nick)
+## Inference Modeling
 
 ```{r}
-summary(coffee_ratings$total_cup_points)
-```
-
-```{r}
-# Histogram of Total Cup Points
-hist(
-  coffee_ratings$total_cup_points,
-  col = "lightgray",
-  main = "Histogram of Total Cup Points",
-  xlab = "Total Cup Points"
-)
-```
-
-```{r}
-# Distribution of bean species
-table(coffee_ratings$species)
-```
-
-```{r}
-# Distribution of processing method
-table(coffee_ratings$processing_method)
+source("inf_model.R")
 ```

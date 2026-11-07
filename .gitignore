@@ -11,6 +11,7 @@ npp_coffee_project_nb.html
 # R history and environment files (root and subfolders)
 .Rhistory
 .RData
+.RDataTmp
 .Ruserdata
 **/.Rhistory
 **/.RData
@@ -27,3 +28,4 @@ coffee_ratings.csv
 # OS metadata
 .DS_Store
 Thumbs.db
+*Zone.Identifier
