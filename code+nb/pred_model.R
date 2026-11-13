@@ -1,92 +1,119 @@
 # ==============================================================================
-# Coffee Quality Prediction Pipeline - Comprehensive Prediction Script
-# Includes Step-by-Step Summary Tables and Visualizations
+# Coffee Quality Prediction Pipeline Script
+
+# Research Question: Can we learn a function Y = f(X) to accurately predict a 
+# coffee lot’s overall quality score (total_cup_points) using only its non-sensory  
+# physical, agronomic, and geographic attributes (X)?
 # ==============================================================================
 
-# Load necessary libraries
 library(dplyr)
-library(caret)
 library(leaps)
-library(FNN)          # Used for KNN regression
-library(randomForest) # Used for Random Forest
+library(FNN)          # KNN regression
+library(randomForest) # Random Forest
 library(readr)
 
-# Step 1: Setup, Data Loading, and Preprocessing
+# Step 1: Data Loading & Cleaning
+# ==============================================================================
+# This first step loads the raw coffee ratings dataset, extracts all of our   
+# specified target variable and predictor columns, converts character  
+# variables to factors, and cleans numeric formats.
 
-coffee_ratings <- read_csv(here::here("data_info", "coffee_ratings.csv"))
+# This makes sure that the data types are correctly formatted and ready for  
+# modeling and filters out any missing data records to prevent bugs
+# and errors down the line.
+# ==============================================================================
 
-# Select required columns
+coffee_ratings <- read_csv(here::here("data_info", "coffee_ratings.csv"), show_col_types = FALSE)
+
 cols_to_use <- c("total_cup_points", "moisture", "category_one_defects", 
                  "category_two_defects", "altitude_mean_meters", "color", 
                  "country_of_origin", "species", "variety", "processing_method")
 
 df <- coffee_ratings[, cols_to_use]
 
-# Impute missing values for categorical variables with "unknown"
 cat_vars <- c("color", "country_of_origin", "species", "variety", "processing_method")
 for (var in cat_vars) {
   df[[var]] <- as.character(df[[var]])
   df[[var]][is.na(df[[var]]) | df[[var]] == "" | df[[var]] == "NA"] <- "unknown"
-  df[[var]] <- as.factor(df[[var]])
 }
 
-# Group low-frequency categories (< 5 lots) into "other"
-for (var in cat_vars) {
-  counts <- table(df[[var]])
-  rare_cats <- names(counts[counts < 5])
-  levels_df <- levels(df[[var]])
-  levels_df[levels_df %in% rare_cats] <- "other"
-  levels(df[[var]]) <- levels_df
-}
-
-# Make sure the numeric variables are actually numeric
 numeric_vars <- c("total_cup_points", "moisture", "category_one_defects", 
                   "category_two_defects", "altitude_mean_meters")
 for (var in numeric_vars) {
   df[[var]] <- as.numeric(df[[var]])
 }
 
-# Remove remaining rows with missing values in numeric variables
 df <- na.omit(df)
 
-cat("=== STEP 1 COMPLETE: Preprocessed Dataset Dimensions ==\n")
+# Filter out all rows with 0 cup points
+df <- df[df$total_cup_points > 0, ]
+
+cat("=== STEP 1 COMPLETE: Cleaned Dataset Dimensions ===\n")
 print(dim(df))
 
-# VISUALIZATION 1: Distribution of the Target Variable (Total Cup Points)
-hist(df$total_cup_points, main = "Distribution of Coffee Cupping Scores",
-     xlab = "Total Cup Points", col = "skyblue", border = "white", breaks = 20)
+# Step 2: 60/20/20 Train / Validation / Test Split (Before Feature Eng.)
+# ==============================================================================
+# Now, we will randomly partition the dataset into a 60% training set, 
+# 20% validation set, and 20% held-out test set using a fixed random seed.
 
-# Step 2: Data Splitting (60% Train, 20% Validation, 20% Test)
+# This is quite important for both preventing optimism bias (hence the CV approach) 
+# as well as data leakage from not saving random results. The training set is 
+# used for fitting, the validation set is used only for hyperparameter 
+# tuning and model selection, and the test set will be completely unseen 
+# until the final unbiased evaluation.
+# ==============================================================================
 
-set.seed(42) # For reproducibility
+set.seed(42)
 n <- nrow(df)
 
-train_index <- sample(1:n, size = 0.60 * n)
+train_index     <- sample(1:n, size = floor(0.60 * n))
 remaining_index <- setdiff(1:n, train_index)
-val_index <- sample(remaining_index, size = 0.50 * length(remaining_index)) # 20% of total
-test_index <- setdiff(remaining_index, val_index)                           # 20% of total
+val_index       <- sample(remaining_index, size = floor(0.50 * length(remaining_index)))
+test_index      <- setdiff(remaining_index, val_index)
 
 train_data <- df[train_index, ]
 val_data   <- df[val_index, ]
 test_data  <- df[test_index, ]
 
-# SUMMARY TABLE 1: Split Distribution & Target Statistics
 split_summary_table <- data.frame(
-  Subset = c("Training", "Validation", "Test"),
-  Count = c(nrow(train_data), nrow(val_data), nrow(test_data)),
-  Percentage = c(nrow(train_data)/n*100, nrow(val_data)/n*100, nrow(test_data)/n*100),
-  Mean_Score = c(mean(train_data$total_cup_points), mean(val_data$total_cup_points), mean(test_data$total_cup_points)),
-  SD_Score = c(sd(train_data$total_cup_points), sd(val_data$total_cup_points), sd(test_data$total_cup_points))
+  Subset     = c("Training", "Validation", "Test"),
+  Count      = c(nrow(train_data), nrow(val_data), nrow(test_data)),
+  Percentage = round(c(nrow(train_data), nrow(val_data), nrow(test_data)) / n * 100, 1),
+  Mean_Score = round(c(mean(train_data$total_cup_points), mean(val_data$total_cup_points), mean(test_data$total_cup_points)), 3),
+  SD_Score   = round(c(sd(train_data$total_cup_points), sd(val_data$total_cup_points), sd(test_data$total_cup_points)), 3)
 )
 
 cat("\n=== SUMMARY TABLE 1: Dataset Partitioning & Target Statistics ===\n")
 print(split_summary_table)
 
-# Step 3: Z-Score Standardization for Numeric Predictors
+# Step 3: Feature Engineering
+# ==============================================================================
+# This leg of the script learns categorical factor levels of a substantial enough 
+# size (frequencies >= 5), as well as means and standard deviations ONLY
+# from the training set. It then maps them onto validation/test splits
+# and standardizes the numeric features.
 
-num_preds <- c("moisture", "category_one_defects", "category_two_defects", "altitude_mean_meters")
+# In doing so, we prevent data from meshing from validation/test sets into the
+# training set, and avoids "new factor level" errors by collapsing
+# all of the rare categories into "other".
+# ==============================================================================
 
-# Compute means and standard deviations exclusively from training data
+for (var in cat_vars) {
+  train_counts <- table(train_data[[var]])
+  valid_levels <- names(train_counts[train_counts >= 5])
+  
+  map_rare <- function(x) {
+    x_clean <- ifelse(x %in% valid_levels, x, "other")
+    factor(x_clean, levels = unique(c(valid_levels, "other")))
+  }
+  
+  train_data[[var]] <- map_rare(train_data[[var]])
+  val_data[[var]]   <- map_rare(val_data[[var]])
+  test_data[[var]]  <- map_rare(test_data[[var]])
+}
+
+# Standardize numeric predictors using only the training means and SDs
+num_preds   <- c("moisture", "category_one_defects", "category_two_defects", "altitude_mean_meters")
 train_means <- sapply(train_data[, num_preds], mean)
 train_sds   <- sapply(train_data[, num_preds], sd)
 
@@ -98,149 +125,269 @@ standardize_cols <- function(data, preds, means, sds) {
   return(scaled_df)
 }
 
-train_data_scaled <- standardize_cols(train_data, num_preds, train_means, train_sds)
-val_data_scaled   <- standardize_cols(val_data, num_preds, train_means, train_sds)
-test_data_scaled  <- standardize_cols(test_data, num_preds, train_means, train_sds)
+train_scaled <- standardize_cols(train_data, num_preds, train_means, train_sds)
+val_scaled   <- standardize_cols(val_data, num_preds, train_means, train_sds)
+test_scaled  <- standardize_cols(test_data, num_preds, train_means, train_sds)
 
-# Step 4: Model Training, Tuning, and Intermediate Visualizations
-
-# Baseline Model
-baseline_pred <- mean(train_data$total_cup_points)
-baseline_rmse <- sqrt(mean((test_data$total_cup_points - baseline_pred)^2))
-
-# Multiple Linear Regression
-lm_model <- lm(total_cup_points ~ ., data = train_data_scaled)
-lm_preds <- predict(lm_model, newdata = val_data_scaled)
-lm_val_rmse <- sqrt(mean((val_data_scaled$total_cup_points - lm_preds)^2))
-
-# Forward Stepwise Selection
-max_vars <- min(15, ncol(model.matrix(total_cup_points ~ ., data = train_data_scaled)) - 1)
-regfit.full <- regsubsets(total_cup_points ~ ., data = train_data_scaled, 
-                          nvmax = max_vars, method = "forward")
-reg_summary <- summary(regfit.full)
-
-num_models_fit <- length(reg_summary$cp)
-val_mses_step <- numeric(num_models_fit)
-
-for (i in 1:num_models_fit) {
-  coefs <- coef(regfit.full, id = i)
-  common_vars <- intersect(names(coefs), colnames(model.matrix(total_cup_points ~ ., data = val_data_scaled)))
-  X_val_subset <- model.matrix(total_cup_points ~ ., data = val_data_scaled)[, common_vars, drop = FALSE]
-  preds <- X_val_subset %*% coefs[common_vars]
-  val_mses_step[i] <- mean((val_data_scaled$total_cup_points - preds)^2)
+# This is a helper function for safe subset matrix prediction
+predict_regsubsets <- function(regfit_obj, id, newdata) {
+  coefs <- coef(regfit_obj, id = id)
+  X_mat <- model.matrix(total_cup_points ~ ., data = newdata)
+  common_vars <- intersect(names(coefs), colnames(X_mat))
+  as.vector(X_mat[, common_vars, drop = FALSE] %*% coefs[common_vars])
 }
 
-best_k <- which.min(val_mses_step)
+# Step 4: Model Training, Tuning & Bias-Variance (Train vs. Validation) Curves
+# ==============================================================================
+# This is where the fun begins! Next, we fit the baseline, stepwise, KNN, and   
+# random forest models, tune parameters (subset size k, neighbors k, mtry,   
+# tree depth maxnodes) while tracking both the Training and Validation RMSE.
 
-# VISUALIZATION 2: Stepwise Validation MSE Curve
-plot(1:num_models_fit, val_mses_step, type = "b", pch = 19, col = "darkblue",
-     xlab = "Number of Predictors (k)", ylab = "Validation MSE",
-     main = "Forward Stepwise Selection: Validation MSE vs. Model Size")
-points(best_k, val_mses_step[best_k], col = "red", pch = 19, cex = 1.5)
-legend("topright", legend = c("Validation MSE", paste("Optimal k =", best_k)), 
-       col = c("darkblue", "red"), pch = c(19, 19))
+# The process directly measures and plots the bias-variance tradeoff.  
+# Visualizing training vs. validation error curves allows us to see where  
+# models begin overfitting to noise.
+# We can then find the optimal parameters to use for each model.
+# ==============================================================================
 
-# KNN Regression (Tuning k from 1 to 50)
-train_matrix <- model.matrix(total_cup_points ~ . - 1, data = train_data_scaled)
-val_matrix   <- model.matrix(total_cup_points ~ . - 1, data = val_data_scaled)
-test_matrix  <- model.matrix(total_cup_points ~ . - 1, data = test_data_scaled)
+# OLS Multiple Linear Regression
+lm_model    <- lm(total_cup_points ~ ., data = train_scaled)
+lm_train_rmse <- sqrt(mean((train_scaled$total_cup_points - predict(lm_model, train_scaled))^2))
+lm_val_rmse   <- sqrt(mean((val_scaled$total_cup_points - predict(lm_model, val_scaled))^2))
 
-k_values <- 1:50
-val_rmse_knn <- numeric(length(k_values))
+# Forward Stepwise Selection (Train vs. Validation RMSE across model size k)
+max_vars    <- min(20, ncol(model.matrix(total_cup_points ~ ., data = train_scaled)) - 1)
+regfit_fwd  <- regsubsets(total_cup_points ~ ., data = train_scaled, nvmax = max_vars, method = "forward")
+num_models  <- length(summary(regfit_fwd)$cp)
+
+step_train_rmse <- numeric(num_models)
+step_val_rmse   <- numeric(num_models)
+
+for (i in 1:num_models) {
+  step_train_rmse[i] <- sqrt(mean((train_scaled$total_cup_points - predict_regsubsets(regfit_fwd, i, train_scaled))^2))
+  step_val_rmse[i]   <- sqrt(mean((val_scaled$total_cup_points - predict_regsubsets(regfit_fwd, i, val_scaled))^2))
+}
+best_k_step <- which.min(step_val_rmse)
+
+# Graph 1: Stepwise Train vs. Validation RMSE
+plot(1:num_models, step_val_rmse, type = "b", pch = 19, col = "darkblue",
+     ylim = range(c(step_train_rmse, step_val_rmse)),
+     xlab = "Number of Predictors (Model Complexity)", ylab = "RMSE",
+     main = "Forward Stepwise: Training vs. Validation RMSE")
+lines(1:num_models, step_train_rmse, type = "b", pch = 17, lty = 2, col = "darkgray")
+points(best_k_step, step_val_rmse[best_k_step], col = "red", pch = 19, cex = 1.5)
+legend("topright", legend = c("Validation RMSE", "Training RMSE", paste("Optimal Size =", best_k_step)),
+       col = c("darkblue", "darkgray", "red"), lty = c(1, 2, NA), pch = c(19, 17, 19), cex = 0.85)
+
+# KNN Regression (Train vs. Validation RMSE across k = 1..50)
+train_matrix <- model.matrix(total_cup_points ~ . - 1, data = train_scaled)
+val_matrix   <- model.matrix(total_cup_points ~ . - 1, data = val_scaled)
+test_matrix  <- model.matrix(total_cup_points ~ . - 1, data = test_scaled)
+
+k_values       <- 1:50
+knn_train_rmse <- numeric(length(k_values))
+knn_val_rmse   <- numeric(length(k_values))
 
 for (i in seq_along(k_values)) {
-  knn_pred <- knn.reg(train = train_matrix, test = val_matrix, 
-                      y = train_data_scaled$total_cup_points, k = k_values[i])$pred
-  val_rmse_knn[i] <- sqrt(mean((val_data_scaled$total_cup_points - knn_pred)^2))
+  tr_pred <- knn.reg(train = train_matrix, test = train_matrix, y = train_scaled$total_cup_points, k = k_values[i])$pred
+  va_pred <- knn.reg(train = train_matrix, test = val_matrix,   y = train_scaled$total_cup_points, k = k_values[i])$pred
+  knn_train_rmse[i] <- sqrt(mean((train_scaled$total_cup_points - tr_pred)^2))
+  knn_val_rmse[i]   <- sqrt(mean((val_scaled$total_cup_points - va_pred)^2))
 }
+best_k_knn <- k_values[which.min(knn_val_rmse)]
 
-best_k_knn <- k_values[which.min(val_rmse_knn)]
+# Graph 2: KNN Train vs. Validation RMSE (Bias-Variance Tradeoff)
+plot(k_values, knn_val_rmse, type = "l", lwd = 2, col = "forestgreen",
+     ylim = range(c(knn_train_rmse, knn_val_rmse)),
+     xlab = "Number of Neighbors (k) [High Flexibility -> Low Flexibility]", ylab = "RMSE",
+     main = "KNN Regression: Training vs. Validation RMSE")
+lines(k_values, knn_train_rmse, lwd = 2, lty = 2, col = "darkgray")
+points(best_k_knn, min(knn_val_rmse), col = "red", pch = 19, cex = 1.5)
+legend("bottomright", legend = c("Validation RMSE", "Training RMSE", paste("Optimal k =", best_k_knn)),
+       col = c("forestgreen", "darkgray", "red"), lty = c(1, 2, NA), pch = c(NA, NA, 19), cex = 0.85)
 
-# VISUALIZATION 3: KNN Tuning Curve (RMSE vs K)
-plot(k_values, val_rmse_knn, type = "l", lwd = 2, col = "forestgreen",
-     xlab = "Number of Neighbors (k)", ylab = "Validation RMSE",
-     main = "KNN Regression Tuning: Validation RMSE across K")
-points(best_k_knn, min(val_rmse_knn), col = "red", pch = 19, cex = 1.5)
-legend("topright", legend = c("Validation RMSE", paste("Optimal k =", best_k_knn)), 
-       col = c("forestgreen", "red"), lty = c(1, NA), pch = c(NA, 19))
-
-# Random Forest (Tuning mtry)
+# Random Forest Tuning (mtry AND Tree Depth; maxnodes for different parts of the bias/variance curve)
 set.seed(42)
-mtry_values <- c(2, 4, 6, 8)
-val_rmse_rf <- numeric(length(mtry_values))
+mtry_values   <- c(2, 4, 6, 8)
+rf_train_rmse <- numeric(length(mtry_values))
+rf_val_rmse   <- numeric(length(mtry_values))
 
 for (i in seq_along(mtry_values)) {
-  rf_model <- randomForest(total_cup_points ~ ., data = train_data_scaled, 
-                           ntree = 300, mtry = mtry_values[i], bootstrap = TRUE)
-  rf_preds <- predict(rf_model, newdata = val_data_scaled)
-  val_rmse_rf[i] <- sqrt(mean((val_data_scaled$total_cup_points - rf_preds)^2))
+  rf_tmp <- randomForest(total_cup_points ~ ., data = train_scaled, ntree = 300, mtry = mtry_values[i])
+  rf_train_rmse[i] <- sqrt(mean((train_scaled$total_cup_points - predict(rf_tmp, train_scaled))^2))
+  rf_val_rmse[i]   <- sqrt(mean((val_scaled$total_cup_points - predict(rf_tmp, val_scaled))^2))
 }
+best_mtry <- mtry_values[which.min(rf_val_rmse)]
 
-best_mtry <- mtry_values[which.min(val_rmse_rf)]
+# Flexibility Curve at best_mtry (the maxnodes)
+maxnodes_grid    <- c(5, 10, 20, 40, 80, 150, 250)
+depth_train_rmse <- numeric(length(maxnodes_grid))
+depth_val_rmse   <- numeric(length(maxnodes_grid))
 
-# VISUALIZATION 4: Random Forest Tuning (RMSE vs mtry)
-plot(mtry_values, val_rmse_rf, type = "b", pch = 19, col = "purple",
-     xlab = "Parameter mtry", ylab = "Validation RMSE",
-     main = "Random Forest Tuning: Validation RMSE vs. mtry")
-points(best_mtry, val_rmse_rf[which.min(val_rmse_rf)], col = "red", pch = 19, cex = 1.5)
+for (i in seq_along(maxnodes_grid)) {
+  set.seed(42)
+  rf_d <- randomForest(total_cup_points ~ ., data = train_scaled, ntree = 300, 
+                       mtry = best_mtry, maxnodes = maxnodes_grid[i])
+  depth_train_rmse[i] <- sqrt(mean((train_scaled$total_cup_points - predict(rf_d, train_scaled))^2))
+  depth_val_rmse[i]   <- sqrt(mean((val_scaled$total_cup_points - predict(rf_d, val_scaled))^2))
+}
+best_maxnodes <- maxnodes_grid[which.min(depth_val_rmse)]
 
-# Fit Final Random Forest Model with optimal mtry
-final_rf <- randomForest(total_cup_points ~ ., data = train_data_scaled, 
-                         ntree = 500, mtry = best_mtry, bootstrap = TRUE)
+# Graph 3: Random Forest Flexibility Curve
+plot(maxnodes_grid, depth_val_rmse, type = "b", pch = 19, col = "purple",
+     ylim = range(c(depth_train_rmse, depth_val_rmse)),
+     xlab = "Max Terminal Nodes (Tree Depth / Flexibility)", ylab = "RMSE",
+     main = "Random Forest: Training vs. Validation RMSE across Tree Depth")
+lines(maxnodes_grid, depth_train_rmse, type = "b", pch = 17, lty = 2, col = "darkgray")
+points(best_maxnodes, min(depth_val_rmse), col = "red", pch = 19, cex = 1.5)
+legend("topright", legend = c("Validation RMSE", "Training RMSE", paste("Optimal maxnodes =", best_maxnodes)),
+       col = c("purple", "darkgray", "red"), lty = c(1, 2, NA), pch = c(19, 17, 19), cex = 0.85)
 
-# VISUALIZATION 5: Random Forest Variable Importance Plot
-varImpPlot(final_rf, main = "Random Forest Variable Importance")
+# The final tuned Random Forest model
+set.seed(42)
+final_rf <- randomForest(total_cup_points ~ ., data = train_scaled, ntree = 500, 
+                         mtry = best_mtry, maxnodes = best_maxnodes, importance = TRUE)
 
-# ------------------------------------------------------------------------------
-# Step 5: Final Evaluation on the Test Set & Summary Reporting
-# ------------------------------------------------------------------------------
+# Graph 4: Random Forest Variable Importance Plot (VIP)
+varImpPlot(final_rf, main = "Tuned Random Forest Variable Importance", cex = 0.8)
+
+# Step 5: Final Evaluation on the Test Set: Analyzing Overfitting
+# ==============================================================================
+# The final part of this script pertains to the model evaluation. Here, we
+# analyze all finalized models on the test set, calculating Test RMSE, Test R^2, 
+# and what we call the "Overfit Gap" (which refers to Test - Train RMSE).
+
+# This completes our prediction analysis by quantifying how well our models perform 
+# on unseen data, and proving that hyperparameter tuning successfully controlled 
+# for optimism bias.
+# ==============================================================================
 
 evaluate_model <- function(actual, predicted) {
-  rmse <- sqrt(mean((actual - predicted)^2))
+  rmse   <- sqrt(mean((actual - predicted)^2))
   ss_res <- sum((actual - predicted)^2)
   ss_tot <- sum((actual - mean(actual))^2)
-  r2 <- 1 - (ss_res / ss_tot)
+  r2     <- 1 - (ss_res / ss_tot)
   return(c(RMSE = rmse, R2 = r2))
 }
 
-# Baseline Test Performance
-baseline_test_preds <- rep(mean(train_data$total_cup_points), nrow(test_data))
-res_baseline <- evaluate_model(test_data$total_cup_points, baseline_test_preds)
+# Predictions across Train and Test sets
+base_pred_tr <- rep(mean(train_scaled$total_cup_points), nrow(train_scaled))
+base_pred_te <- rep(mean(train_scaled$total_cup_points), nrow(test_scaled))
 
-# MLR Test Performance
-lm_test_preds <- predict(lm_model, newdata = test_data_scaled)
-res_lm <- evaluate_model(test_data$total_cup_points, lm_test_preds)
+lm_pred_tr   <- predict(lm_model, newdata = train_scaled)
+lm_pred_te   <- predict(lm_model, newdata = test_scaled)
 
-# Stepwise Test Performance
-step_coefs <- coef(regfit.full, id = best_k)
-test_mat_step <- model.matrix(total_cup_points ~ ., data = test_data_scaled)[, names(step_coefs)]
-step_test_preds <- test_mat_step %*% step_coefs
-res_step <- evaluate_model(test_data$total_cup_points, step_test_preds)
+step_pred_tr <- predict_regsubsets(regfit_fwd, best_k_step, train_scaled)
+step_pred_te <- predict_regsubsets(regfit_fwd, best_k_step, test_scaled)
 
-# KNN Test Performance
-knn_test_preds <- knn.reg(train = train_matrix, test = test_matrix, 
-                          y = train_data_scaled$total_cup_points, k = best_k_knn)$pred
-res_knn <- evaluate_model(test_data$total_cup_points, knn_test_preds)
+knn_pred_tr  <- knn.reg(train = train_matrix, test = train_matrix, y = train_scaled$total_cup_points, k = best_k_knn)$pred
+knn_pred_te  <- knn.reg(train = train_matrix, test = test_matrix,  y = train_scaled$total_cup_points, k = best_k_knn)$pred
 
-# Random Forest Test Performance
-rf_test_preds <- predict(final_rf, newdata = test_data_scaled)
-res_rf <- evaluate_model(test_data$total_cup_points, rf_test_preds)
+rf_pred_tr   <- predict(final_rf, newdata = train_scaled)
+rf_pred_te   <- predict(final_rf, newdata = test_scaled)
 
-# SUMMARY TABLE 2: Final Model Performance Comparison Table
-results_table <- data.frame(
-  Model = c("Baseline", "Multiple Linear Regression", "Stepwise Regression", "KNN Regression", "Random Forest"),
-  Test_RMSE = c(res_baseline["RMSE"], res_lm["RMSE"], res_step["RMSE"], res_knn["RMSE"], res_rf["RMSE"]),
-  Test_R2 = c(res_baseline["R2"], res_lm["R2"], res_step["R2"], res_knn["R2"], res_rf["R2"])
+res_base <- evaluate_model(test_scaled$total_cup_points, base_pred_te)
+res_lm   <- evaluate_model(test_scaled$total_cup_points, lm_pred_te)
+res_step <- evaluate_model(test_scaled$total_cup_points, step_pred_te)
+res_knn  <- evaluate_model(test_scaled$total_cup_points, knn_pred_te)
+res_rf   <- evaluate_model(test_scaled$total_cup_points, rf_pred_te)
+
+train_rmses_final <- c(
+  sqrt(mean((train_scaled$total_cup_points - base_pred_tr)^2)),
+  sqrt(mean((train_scaled$total_cup_points - lm_pred_tr)^2)),
+  sqrt(mean((train_scaled$total_cup_points - step_pred_tr)^2)),
+  sqrt(mean((train_scaled$total_cup_points - knn_pred_tr)^2)),
+  sqrt(mean((train_scaled$total_cup_points - rf_pred_tr)^2))
 )
 
-cat("\n=== SUMMARY TABLE 2: Final Test Set Performance Comparison ===\n")
+results_table <- data.frame(
+  Model         = c("Baseline (Mean)", "Multiple Linear Regression", "Forward Stepwise", "KNN Regression", "Tuned Random Forest"),
+  Train_RMSE    = round(train_rmses_final, 4),
+  Test_RMSE     = round(c(res_base["RMSE"], res_lm["RMSE"], res_step["RMSE"], res_knn["RMSE"], res_rf["RMSE"]), 4),
+  Overfit_Gap   = round(c(res_base["RMSE"], res_lm["RMSE"], res_step["RMSE"], res_knn["RMSE"], res_rf["RMSE"]) - train_rmses_final, 4),
+  Test_R2       = round(c(res_base["R2"], res_lm["R2"], res_step["R2"], res_knn["R2"], res_rf["R2"]), 4)
+)
+
+cat("\n=== SUMMARY TABLE 2: Final Train vs. Test Performance & Overfit Gap ===\n")
 print(results_table)
 
-# VISUALIZATION 6: Final Performance Comparison Bar Chart
-par(mar = c(6, 4, 4, 2))
-barplot(results_table$Test_RMSE, names.arg = results_table$Model, las = 2, col = "coral",
+# Graph 5: Final Test RMSE Comparison Bar Chart
+par(mar = c(10, 4, 4, 2)) # Increased bottom margin from 7 to 10 for long labels
+
+barplot(results_table$Test_RMSE, 
+        names.arg = c("Baseline (Mean)", "Multiple Linear Reg.", "Forward Stepwise", "KNN Regression", "Tuned Random Forest"), 
+        las = 2, col = "coral",
+        ylab = "Test RMSE (Lower is Better)", 
+        main = "Comparison of Test RMSE Across Models",
+        cex.names = 0.75,
+        ylim = c(0, max(results_table$Test_RMSE) * 1.15))
+
+abline(h = res_base["RMSE"], lty = 2, col = "black", lwd = 1.5)
+
+legend("topright", legend = c("Baseline Benchmark RMSE"), lty = 2, col = "black", lwd = 1.5, cex = 0.8)
+
+par(mar = c(5, 4, 4, 2))
+
+# ==============================================================================
+# EXPORT & REPORTING: Save Prediction Results & Visualizations to pred_results/
+# ==============================================================================
+
+# Create output directory if it doesn't exist
+if (!dir.exists("pred_results")) {
+  dir.create("pred_results")
+}
+
+# Save Summary Tables as CSV files
+write.csv(split_summary_table, "pred_results/split_summary_table.csv", row.names = FALSE)
+write.csv(results_table, "pred_results/final_performance_results.csv", row.names = FALSE)
+
+# Re-render and save all key figures to pred_results/ for markdown inclusion
+pdf("pred_results/stepwise_train_val_rmse.pdf", width = 9, height = 6)
+plot(1:num_models, step_val_rmse, type = "b", pch = 19, col = "darkblue",
+     ylim = range(c(step_train_rmse, step_val_rmse)),
+     xlab = "Number of Predictors (Model Complexity)", ylab = "RMSE",
+     main = "Forward Stepwise: Training vs. Validation RMSE")
+lines(1:num_models, step_train_rmse, type = "b", pch = 17, lty = 2, col = "darkgray")
+points(best_k_step, step_val_rmse[best_k_step], col = "red", pch = 19, cex = 1.5)
+legend("topright", legend = c("Validation RMSE", "Training RMSE", paste("Optimal Size =", best_k_step)),
+       col = c("darkblue", "darkgray", "red"), lty = c(1, 2, NA), pch = c(19, 17, 19), cex = 0.85)
+dev.off()
+
+pdf("pred_results/knn_train_val_rmse.pdf", width = 9, height = 6)
+plot(k_values, knn_val_rmse, type = "l", lwd = 2, col = "forestgreen",
+     ylim = range(c(knn_train_rmse, knn_val_rmse)),
+     xlab = "Number of Neighbors (k)", ylab = "RMSE",
+     main = "KNN Regression: Training vs. Validation RMSE")
+lines(k_values, knn_train_rmse, lwd = 2, lty = 2, col = "darkgray")
+points(best_k_knn, min(knn_val_rmse), col = "red", pch = 19, cex = 1.5)
+legend("bottomright", legend = c("Validation RMSE", "Training RMSE", paste("Optimal k =", best_k_knn)),
+       col = c("forestgreen", "darkgray", "red"), lty = c(1, 2, NA), pch = c(NA, NA, 19), cex = 0.85)
+dev.off()
+
+pdf("pred_results/rf_depth_flexibility.pdf", width = 9, height = 6)
+plot(maxnodes_grid, depth_val_rmse, type = "b", pch = 19, col = "purple",
+     ylim = range(c(depth_train_rmse, depth_val_rmse)),
+     xlab = "Max Terminal Nodes (Tree Depth / Flexibility)", ylab = "RMSE",
+     main = "Random Forest: Training vs. Validation RMSE across Tree Depth")
+lines(maxnodes_grid, depth_train_rmse, type = "b", pch = 17, lty = 2, col = "darkgray")
+points(best_maxnodes, min(depth_val_rmse), col = "red", pch = 19, cex = 1.5)
+legend("topright", legend = c("Validation RMSE", "Training RMSE", paste("Optimal maxnodes =", best_maxnodes)),
+       col = c("purple", "darkgray", "red"), lty = c(1, 2, NA), pch = c(19, 17, 19), cex = 0.85)
+dev.off()
+
+pdf("pred_results/rf_variable_importance.pdf", width = 10, height = 6)
+varImpPlot(final_rf, main = "Tuned Random Forest Variable Importance", cex = 0.8)
+dev.off()
+
+pdf("pred_results/test_rmse_comparison.pdf", width = 10, height = 6)
+par(mar = c(10, 4, 4, 2))
+barplot(results_table$Test_RMSE, 
+        names.arg = c("Baseline (Mean)", "Multiple Linear Reg.", "Forward Stepwise", "KNN Regression", "Tuned Random Forest"), 
+        las = 2, col = "coral",
         ylab = "Test RMSE (Lower is Better)", main = "Comparison of Test RMSE Across Models",
-        cex.names = 0.8)
-abline(h = res_baseline["RMSE"], lty = 2, col = "black")
-legend("topright", legend = c("Baseline RMSE Threshold"), lty = 2, col = "black", cex = 0.8)
-par(mar = c(5, 4, 4, 2)) # Reset default margins
+        cex.names = 0.75, ylim = c(0, max(results_table$Test_RMSE) * 1.15))
+abline(h = res_base["RMSE"], lty = 2, col = "black", lwd = 1.5)
+legend("topright", legend = c("Baseline Benchmark RMSE"), lty = 2, col = "black", lwd = 1.5, cex = 0.8)
+par(mar = c(5, 4, 4, 2))
+dev.off()
+
+cat("\n=== pred_model.R: All results and figures successfully exported to 'pred_results/' ===\n")

@@ -9,9 +9,10 @@ editor: visual
 
 ```{r, include=FALSE}
 # Clear active workspace memory at the start of interactive runs
+# If prompted to load in the renv, select Option 1
 rm(list = ls())
 
-# Ensure 'here' is available and loaded for bulletproof relative pathing
+# Ensure 'here' is available and loaded so relative paths can be used
 if (!requireNamespace("here", quietly = TRUE)) {
   install.packages("here", repos = "https://cloud.r-project.org")
 }

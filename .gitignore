@@ -8,11 +8,19 @@ npp_coffee_project_nb.html
 *_cache/
 *_files/
 
+# Ignore output result directories
+inf_results/
+pred_results/
+
+# Ignore generated standalone PDF figures and plots
+*.pdf
+
 # R history and environment files (root and subfolders)
 .Rhistory
 .RData
 .RDataTmp
 .Ruserdata
+.Rproj.user/
 **/.Rhistory
 **/.RData
 **/.Ruserdata
