@@ -2,7 +2,7 @@
 # Coffee Quality Inference Pipeline Script
 
 # Research Question: What is the partial effect of processing method and
-# altitude on cup points?
+# altitude on total cup points?
 # ==============================================================================
 
 library(readr)
@@ -75,13 +75,25 @@ cat("=== STEP 1 COMPLETE: Cleaned Inference Dataset Dimensions ===\n")
 print(dim(df))
 
 # Graph 1: Bivariate Relationship (this is the unadjusted benchmark)
-plot(df$altitude_100m, df$total_cup_points, 
-     main = "Coffee Quality vs. Growing Altitude (per 100m)",
-     xlab = "Altitude (in hundreds of meters)", ylab = "Total Cup Points",
-     col = adjustcolor("darkblue", alpha.f = 0.4), pch = 16)
-abline(lm(total_cup_points ~ altitude_100m, data = df), col = "red", lwd = 2)
-legend("topleft", legend = c("Coffee Lots", "Unadjusted OLS Trendline"), 
-       col = c("darkblue", "red"), pch = c(16, NA), lty = c(NA, 1), cex = 0.85)
+generate_bivariate_plot <- function() {
+  plot(df$altitude_100m, df$total_cup_points, 
+       main = "Coffee Quality vs. Growing Altitude (per 100m)",
+       xlab = "Altitude (in hundreds of meters)", ylab = "Total Cup Points",
+       col = adjustcolor("darkblue", alpha.f = 0.4), pch = 16)
+  abline(lm(total_cup_points ~ altitude_100m, data = df), col = "red", lwd = 2)
+  legend("topleft", legend = c("Coffee Lots", "Unadjusted OLS Trendline"), 
+         col = c("darkblue", "red"), pch = c(16, NA), lty = c(NA, 1), cex = 0.85)
+}
+
+if (!dir.exists("inf_results")) dir.create("inf_results")
+
+if (interactive()) {
+  generate_bivariate_plot()
+}
+
+pdf("inf_results/altitude_bivariate_trend.pdf", width = 9, height = 6)
+generate_bivariate_plot()
+dev.off()
 
 # Step 2: Nested Model Progression (Baseline -> Confounder-Adjusted -> Mediation)
 # ==============================================================================
@@ -237,22 +249,32 @@ cat("OLS Estimate:", round(coef(model2)["altitude_100m"], 4),
 # empirically-based answer for our research question.
 # ==============================================================================
 
-models_list <- list(model0, model1, model2)
-ests <- sapply(models_list, function(m) coef(m)["altitude_100m"])
-cis  <- sapply(models_list, function(m) confint(m)["altitude_100m", ])
+generate_stability_plot <- function() {
+  models_list <- list(model0, model1, model2)
+  ests <- sapply(models_list, function(m) coef(m)["altitude_100m"])
+  cis  <- sapply(models_list, function(m) confint(m)["altitude_100m", ])
+  
+  par(mar = c(5, 11, 4, 2))
+  plot(ests, 3:1, xlim = range(c(cis, 0)), ylim = c(0.5, 3.5),
+       yaxt = "n", pch = 19, cex = 1.5, col = c("darkred", "blue", "darkgreen"),
+       xlab = "Estimated Effect per 100m Elevation Gain (Cup Points)", ylab = "",
+       main = "Altitude Effect Stability Across Model Specifications")
+  axis(2, at = 3:1, labels = c("Model 0 (Unadjusted)", "Model 1 (+ Confounders)", "Model 2 (+ Mediators)"), las = 1)
+  segments(cis[1, ], 3:1, cis[2, ], 3:1, col = c("darkred", "blue", "darkgreen"), lwd = 2)
+  abline(v = 0, lty = 2, col = "gray40")
+  par(mar = c(5, 4, 4, 2))
+}
 
-par(mar = c(5, 11, 4, 2))
-plot(ests, 3:1, xlim = range(c(cis, 0)), ylim = c(0.5, 3.5),
-     yaxt = "n", pch = 19, cex = 1.5, col = c("darkred", "blue", "darkgreen"),
-     xlab = "Estimated Effect per 100m Elevation Gain (Cup Points)", ylab = "",
-     main = "Altitude Effect Stability Across Model Specifications")
-axis(2, at = 3:1, labels = c("Model 0 (Unadjusted)", "Model 1 (+ Confounders)", "Model 2 (+ Mediators)"), las = 1)
-segments(cis[1, ], 3:1, cis[2, ], 3:1, col = c("darkred", "blue", "darkgreen"), lwd = 2)
-abline(v = 0, lty = 2, col = "gray40")
-par(mar = c(5, 4, 4, 2))
+if (interactive()) {
+  generate_stability_plot()
+}
+
+pdf("inf_results/altitude_effect_stability.pdf", width = 10, height = 6)
+generate_stability_plot()
+dev.off()
 
 # ==============================================================================
-# EXPORT & REPORTING: Save Inference Results & Visualizations to inf_results/
+# EXPORT & REPORTING: Save Inference Result Summary Tables to inf_results/
 # ==============================================================================
 
 # Create output directory if it doesn't exist
@@ -264,31 +286,5 @@ if (!dir.exists("inf_results")) {
 write.csv(extract_key_table(model1), "inf_results/model1_confounder_adjusted.csv", row.names = FALSE)
 write.csv(extract_key_table(model2), "inf_results/model2_mediation_effect.csv", row.names = FALSE)
 write.csv(diag_table, "inf_results/model_diagnostics_table.csv", row.names = FALSE)
-
-# Re-render and save all key figures to inf_results/ for markdown inclusion
-pdf("inf_results/altitude_bivariate_trend.pdf", width = 9, height = 6)
-plot(df$altitude_100m, df$total_cup_points, 
-     main = "Coffee Quality vs. Growing Altitude (per 100m)",
-     xlab = "Altitude (in hundreds of meters)", ylab = "Total Cup Points",
-     col = adjustcolor("darkblue", alpha.f = 0.4), pch = 16)
-abline(lm(total_cup_points ~ altitude_100m, data = df), col = "red", lwd = 2)
-legend("topleft", legend = c("Coffee Lots", "Unadjusted OLS Trendline"), 
-       col = c("darkblue", "red"), pch = c(16, NA), lty = c(NA, 1), cex = 0.85)
-dev.off()
-
-pdf("inf_results/altitude_effect_stability.pdf", width = 10, height = 6)
-models_list <- list(model0, model1, model2)
-ests <- sapply(models_list, function(m) coef(m)["altitude_100m"])
-cis  <- sapply(models_list, function(m) confint(m)["altitude_100m", ])
-par(mar = c(5, 11, 4, 2))
-plot(ests, 3:1, xlim = range(c(cis, 0)), ylim = c(0.5, 3.5),
-     yaxt = "n", pch = 19, cex = 1.5, col = c("darkred", "blue", "darkgreen"),
-     xlab = "Estimated Effect per 100m Elevation Gain (Cup Points)", ylab = "",
-     main = "Altitude Effect Stability Across Model Specifications")
-axis(2, at = 3:1, labels = c("Model 0 (Unadjusted)", "Model 1 (+ Confounders)", "Model 2 (+ Mediators)"), las = 1)
-segments(cis[1, ], 3:1, cis[2, ], 3:1, col = c("darkred", "blue", "darkgreen"), lwd = 2)
-abline(v = 0, lty = 2, col = "gray40")
-par(mar = c(5, 4, 4, 2))
-dev.off()
 
 cat("\n=== inf_model.R: All results and figures successfully exported to 'inf_results/' ===\n")

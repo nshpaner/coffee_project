@@ -8,20 +8,37 @@ editor: visual
 ## Setup Renv and Install Dependencies
 
 ```{r, include=FALSE}
-# Clear active workspace memory at the start of interactive runs
-# If prompted to load in the renv, select Option 1
+# Setup: Environment Bootstrap, renv, Paths, and Global Options
+# NOTE: When it asks "What would you like to do?" and provides you three options, choose # 1
+
+# Clear active workspace memory for a clean session
 rm(list = ls())
 
-# Ensure 'here' is available and loaded so relative paths can be used
+# Make sure 'here' is available first so we can use it for path checks
 if (!requireNamespace("here", quietly = TRUE)) {
   install.packages("here", repos = "https://cloud.r-project.org")
 }
 library(here)
 
-# Force knitr to run all notebook chunks from the project root directory
+# Automatic renv Bootstrap & Activation
+if (!requireNamespace("renv", quietly = TRUE)) {
+  install.packages("renv", repos = "https://cloud.r-project.org")
+}
+
+if (!file.exists(here("renv.lock"))) {
+  message("No renv.lock found. Initializing fresh renv environment...")
+  renv::init(project = here(), bare = TRUE, prompt = FALSE)
+} else {
+  # Automatically restore project dependencies from lockfile without prompting
+  message("Restoring renv environment from lockfile...")
+  renv::load(project = here())
+  renv::restore(prompt = FALSE)
+}
+
+# Force knitr and R Markdown / Quarto to run all chunks from the project root
 knitr::opts_knit$set(root.dir = here())
 
-# Set global Quarto / R Markdown chunk options
+# Set global chunk display and figure options
 knitr::opts_chunk$set(
   echo = TRUE,          # Show code chunks in final report
   warning = FALSE,      # Hide package execution warnings
@@ -31,8 +48,10 @@ knitr::opts_chunk$set(
   fig.align = "center"  # Center plot outputs
 )
 
-# Install and load all required project dependencies natively
-source(here("code+nb/install_deps.R"))
+# Source additional project dependency checks if needed
+if (file.exists(here("code+nb/install_deps.R"))) {
+  source(here("code+nb/install_deps.R"))
+}
 ```
 
 ## Prediction Modeling
