@@ -14,7 +14,7 @@ This README outlines our foundational problem statement, translates it into sepa
 
 ## Platform-Independent Reproducibility & Setup Guide
 
-This project is built for **100% platform-independent reproducibility** across Windows, macOS, and Linux, leveraging native R projects (`.Rproj`) and the `here` package for robust, OS-agnostic path resolution.
+This project is built for **100% platform-independent reproducibility** across Windows, macOS, and Linux, using a dedicated R project (`coffee_project.Rproj`) and the `here` package to make sure relative path usage is smooth across systems.
 
 ### Getting Started
 
@@ -29,7 +29,10 @@ This project is built for **100% platform-independent reproducibility** across W
 
 3. Open the project by double-clicking **`coffee_project.Rproj`** at the repository root. (This automatically sets your working directory to the project root).
 
-4. Run the dependency installation script once in your R console to automatically install required packages (such as `here`, `readr`, `dplyr`, `caret`, `leaps`, `FNN`, `randomForest`, and `car`):
+4. Ideally, you would make sure the working notebook file `npp_coffee_project_nb.qmd` is open (located in `code+nb/`), and you would run all cells from the start to activate and run all the scripts. 
+NOTE: if prompted with options for how to set up the renv, select **Option 1**: `renv::initialize()`
+
+5. **Alternatively**, if you don’t want to run the project through an renv: Run the dependency installation script once in your R console to automatically install required packages (such as `here`, `readr`, `dplyr`, `caret`, `leaps`, `FNN`, `randomForest`, and `car`):
 
    ```
    source("install_deps.R")
