@@ -30,9 +30,6 @@ renv/library/
 renv/python/
 renv/staging/
 
-# Raw CSV datasets
-coffee_ratings.csv
-
 # OS metadata
 .DS_Store
 Thumbs.db
