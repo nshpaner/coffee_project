@@ -45,11 +45,20 @@ coffee_project/
 ├── data_info/                  
 │   ├── coffee_ratings.csv      # Raw coffee cupping dataset
 │   └── coffee_ratings_codebook # Variable dictionary codebook
+├── .Rprofile
+├── renv/
+│   ├── .gitignore      # Git ignore auto-generated for renv
+│   └── activate.R      # Renv activation
+│   └── settings.json   # Internal renv settings
 └── code+nb/                    
-    ├── install_deps.R          # Subfolder reference copy of dependency script
-    ├── npp_coffee_project_nb.qmd # Quarto interactive execution notebook
-    ├── pred_model.R            # Predictive modeling and machine learning pipeline
-    └── inf_model.R             # Statistical inference and regression analysis script
+│   ├── install_deps.R          # Subfolder reference copy of dependency script
+│   ├── npp_coffee_project_nb.qmd # Quarto interactive execution notebook
+│   ├── pred_model.R            # Predictive modeling and machine learning pipeline
+│   └── inf_model.R             # Statistical inference and regression analysis script
+├── .gitignore   # Keeps track of all project files to be hidden from repo
+├── LICENSE.txt   # MIT License
+├── README.md   # Project structure and setup
+├── renv.lock   # Snapshot of exact state of R packages
 ```
 
 ## Problem Statement, Research Questions, and Metrics
