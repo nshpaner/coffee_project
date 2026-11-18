@@ -9,7 +9,7 @@ library(readr)
 library(dplyr)
 library(car) # Type II ANOVA and Generalized VIF (GVIF)
 
-# Step 1: Data Loading & Cleaning
+# Step 1: Data Loading and Cleaning 
 # ==============================================================================
 # Our first step loads the coffee ratings dataset, cleans missing records, 
 # scales the altitude per 100 meters, and helps align factor levels with a 
